@@ -1,5 +1,6 @@
 import { DashboardCard } from "@/components/dashboard-card";
 import { DisclaimerBlock } from "@/components/disclaimer-block";
+import { EmptyState } from "@/components/empty-state";
 import { HeroHeader } from "@/components/hero-header";
 import { MetricCard } from "@/components/metric-card";
 import { PageShell } from "@/components/page-shell";
@@ -10,6 +11,23 @@ import { macroGroups } from "@/lib/mock-data";
 
 export default async function DashboardPage() {
   const publishedSnapshot = await getLatestPublishedSnapshot();
+
+  if (!publishedSnapshot) {
+    return (
+      <PageShell className="space-y-6">
+        <HeroHeader
+          eyebrow="Latest Published Snapshot"
+          title="No Published Snapshot"
+          subtitle="An administrator must publish a reviewed cycle snapshot before members can view dashboard data."
+        />
+        <EmptyState
+          title="No published macro snapshot"
+          message="Members can only view the latest published snapshot saved in Supabase."
+        />
+        <DisclaimerBlock />
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell className="space-y-6">

@@ -10,19 +10,23 @@ export type PublishedSnapshot = {
   riskWatch: string;
 };
 
-export async function getLatestPublishedSnapshot(): Promise<PublishedSnapshot> {
+function getMockPublishedSnapshot(): PublishedSnapshot {
+  return {
+    date: latestSnapshot.date,
+    cyclePhase: latestSnapshot.cyclePhase,
+    marketRegime: latestSnapshot.marketRegime,
+    confidenceScore: 55,
+    expectation: latestSnapshot.expectation,
+    riskWatch: latestSnapshot.riskWatch,
+  };
+}
+
+export async function getLatestPublishedSnapshot(): Promise<PublishedSnapshot | null> {
   if (
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
     !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   ) {
-    return {
-      date: latestSnapshot.date,
-      cyclePhase: latestSnapshot.cyclePhase,
-      marketRegime: latestSnapshot.marketRegime,
-      confidenceScore: 55,
-      expectation: latestSnapshot.expectation,
-      riskWatch: latestSnapshot.riskWatch,
-    };
+    return getMockPublishedSnapshot();
   }
 
   const supabase = await createClient();
@@ -37,14 +41,7 @@ export async function getLatestPublishedSnapshot(): Promise<PublishedSnapshot> {
     .maybeSingle();
 
   if (!data) {
-    return {
-      date: latestSnapshot.date,
-      cyclePhase: latestSnapshot.cyclePhase,
-      marketRegime: latestSnapshot.marketRegime,
-      confidenceScore: 55,
-      expectation: latestSnapshot.expectation,
-      riskWatch: latestSnapshot.riskWatch,
-    };
+    return null;
   }
 
   return {

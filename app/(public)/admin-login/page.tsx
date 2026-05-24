@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AdminLoginForm } from "@/components/admin-login-form";
 import { DashboardCard } from "@/components/dashboard-card";
 import { PageShell } from "@/components/page-shell";
 
@@ -7,24 +8,17 @@ export default function AdminLoginPage() {
     <PageShell maxWidth="standard" className="py-12">
       <DashboardCard
         title="Admin Login"
-        description="Separate admin route placeholder. Server-side admin checks arrive with Supabase."
+        description="Secure access for MacroScope administrators"
       >
-        <form className="space-y-4">
-          <label className="block">
-            <span className="text-sm font-medium text-gray-700">Admin email</span>
-            <input className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2" placeholder="admin@macroscope.local" />
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium text-gray-700">Password</span>
-            <input className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2" type="password" placeholder="Password" />
-          </label>
-          <Link
-            href="/admin"
-            className="inline-flex w-full justify-center rounded-md bg-[#0b0d12] px-4 py-2 text-sm font-semibold text-white hover:bg-black"
-          >
-            Continue to Admin
+        <AdminLoginForm />
+        <div className="mt-5 space-y-3 text-sm text-gray-600">
+          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 font-medium text-red-950">
+            Admin access is restricted. All admin activity is logged.
+          </p>
+          <Link className="font-semibold text-[#d71920] hover:text-[#b9151b]" href="/login">
+            Member login
           </Link>
-        </form>
+        </div>
       </DashboardCard>
     </PageShell>
   );

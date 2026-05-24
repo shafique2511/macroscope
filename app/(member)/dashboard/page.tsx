@@ -5,20 +5,23 @@ import { MetricCard } from "@/components/metric-card";
 import { PageShell } from "@/components/page-shell";
 import { RegimeChart } from "@/components/regime-chart";
 import { ScoreBadge } from "@/components/score-badge";
-import { latestSnapshot, macroGroups } from "@/lib/mock-data";
+import { getLatestPublishedSnapshot } from "@/lib/data/snapshots";
+import { macroGroups } from "@/lib/mock-data";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const publishedSnapshot = await getLatestPublishedSnapshot();
+
   return (
     <PageShell className="space-y-6">
       <HeroHeader
         eyebrow="Latest Published Snapshot"
-        title={latestSnapshot.cyclePhase}
-        subtitle={latestSnapshot.expectation}
+        title={publishedSnapshot.cyclePhase}
+        subtitle={publishedSnapshot.expectation}
       />
       <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard label="Cycle Bias" value="Transition" detail={latestSnapshot.riskWatch} />
-        <MetricCard label="Regime" value="Neutral" detail={latestSnapshot.marketRegime} />
-        <MetricCard label="Data Date" value={latestSnapshot.date} detail="Mock member-facing snapshot." />
+        <MetricCard label="Cycle Bias" value={publishedSnapshot.cyclePhase} detail={publishedSnapshot.riskWatch} />
+        <MetricCard label="Regime" value={publishedSnapshot.marketRegime} detail={`Confidence score: ${publishedSnapshot.confidenceScore}`} />
+        <MetricCard label="Data Date" value={publishedSnapshot.date} detail="Latest saved published snapshot." />
       </div>
       <DashboardCard title="Macro Scores" description="Mock scoring preview for future published snapshots.">
         <RegimeChart />

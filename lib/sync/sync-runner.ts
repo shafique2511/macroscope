@@ -1,7 +1,8 @@
 import "server-only";
 import { randomUUID } from "crypto";
-import { fetchFredMacroData } from "@/lib/api/fred";
+import { fetchFredSeries, type FredSeriesResponse } from "@/lib/api/fred";
 import { fetchOptionalMarketData } from "@/lib/api/market-data";
+import { fredSeriesMap, type FredSeriesConfig } from "@/lib/api/series-map";
 import { calculateCycleRegime } from "@/lib/cycle-engine";
 import { normalizeFredData } from "@/lib/data/normalize";
 import { scoreGroups, scoreIndicators } from "@/lib/data/scoring";
@@ -11,9 +12,85 @@ type SyncRunnerOptions = {
   adminUserId: string;
 };
 
+type FailedIndicator = {
+  indicatorKey: string;
+  message: string;
+};
+
+function buildMockFredSeries(series: FredSeriesConfig, index: number): FredSeriesResponse {
+  const latestValue = 3 + index * 0.7;
+  const previousValue = latestValue - 0.2;
+
+  return {
+    source: "fred",
+    series,
+    observations: [
+      {
+        date: "2026-05-01",
+        value: latestValue.toFixed(2),
+      },
+      {
+        date: "2026-04-01",
+        value: previousValue.toFixed(2),
+      },
+      {
+        date: "2025-05-01",
+        value: Math.max(latestValue - 0.8, 0.1).toFixed(2),
+      },
+      {
+        date: "2025-04-01",
+        value: Math.max(previousValue - 0.8, 0.1).toFixed(2),
+      },
+    ],
+  };
+}
+
+async function fetchSeriesForSync() {
+  if (!process.env.FRED_API_KEY) {
+    return {
+      sourceStatus: "mock" as const,
+      seriesResponses: fredSeriesMap.map((series, index) =>
+        buildMockFredSeries(series, index),
+      ),
+      failedIndicators: [] satisfies FailedIndicator[],
+    };
+  }
+
+  const settledResults = await Promise.allSettled(
+    fredSeriesMap.map((series) => fetchFredSeries(series)),
+  );
+  const seriesResponses: FredSeriesResponse[] = [];
+  const failedIndicators: FailedIndicator[] = [];
+
+  settledResults.forEach((result, index) => {
+    const series = fredSeriesMap[index];
+
+    if (result.status === "fulfilled") {
+      seriesResponses.push(result.value);
+      return;
+    }
+
+    failedIndicators.push({
+      indicatorKey: series.id,
+      message:
+        result.reason instanceof Error
+          ? result.reason.message
+          : "Unknown indicator sync failure",
+    });
+  });
+
+  return {
+    sourceStatus: "api" as const,
+    seriesResponses,
+    failedIndicators,
+  };
+}
+
 export async function runMacroSync({ adminUserId }: SyncRunnerOptions) {
   const supabase = createAdminClient();
   const syncRunId = randomUUID();
+  const startedAt = new Date().toISOString();
+  let failedIndicatorsForLog: FailedIndicator[] = [];
 
   const { error: syncStartError } = await supabase.from("macro_sync_runs").insert({
     id: syncRunId,
@@ -27,14 +104,35 @@ export async function runMacroSync({ adminUserId }: SyncRunnerOptions) {
   }
 
   try {
-    const fredData = await fetchFredMacroData();
+    const { sourceStatus, seriesResponses, failedIndicators } =
+      await fetchSeriesForSync();
+    failedIndicatorsForLog = failedIndicators;
     await fetchOptionalMarketData();
 
-    const normalizedObservations = normalizeFredData(fredData);
+    const normalizedObservations = normalizeFredData(seriesResponses);
+    const normalizedIndicatorKeys = new Set(
+      normalizedObservations.map((observation) => observation.externalId),
+    );
+    const emptySeriesFailures = seriesResponses
+      .filter((seriesResponse) => !normalizedIndicatorKeys.has(seriesResponse.series.id))
+      .map((seriesResponse) => ({
+        indicatorKey: seriesResponse.series.id,
+        message: "No valid observations returned for indicator.",
+      }));
+
+    failedIndicatorsForLog = [...failedIndicators, ...emptySeriesFailures];
+
     const scoredIndicators = scoreIndicators(normalizedObservations);
     const groupScores = scoreGroups(scoredIndicators);
     const cycleResult = calculateCycleRegime(groupScores);
-    const now = new Date().toISOString();
+    const syncStatus =
+      failedIndicatorsForLog.length > 0 && scoredIndicators.length > 0
+        ? "partial_success"
+        : "completed";
+
+    if (scoredIndicators.length === 0) {
+      throw new Error("No indicators were synced.");
+    }
 
     const { error: observationsError } = await supabase
       .from("macro_indicator_observations")
@@ -100,14 +198,15 @@ export async function runMacroSync({ adminUserId }: SyncRunnerOptions) {
             api_source: indicator.source,
             api_series_id: indicator.externalId,
             latest_value: indicator.normalizedValue,
-            previous_value: existingIndicator?.latestValue ?? null,
+            previous_value:
+              indicator.previousNormalizedValue ?? existingIndicator?.latestValue ?? null,
             value_unit: indicator.unit,
             latest_date: indicator.date,
-            previous_date: existingIndicator?.latestDate ?? null,
+            previous_date: indicator.previousDate ?? existingIndicator?.latestDate ?? null,
             direction: indicator.direction,
             auto_score: indicator.score,
             auto_score_reason: `Auto score from ${indicator.label} latest ${indicator.unit} reading.`,
-            source_status: "api",
+            source_status: sourceStatus,
             frequency: "scheduled",
             description: indicator.label,
             is_active: true,
@@ -136,21 +235,6 @@ export async function runMacroSync({ adminUserId }: SyncRunnerOptions) {
 
     if (historyError) {
       throw new Error(`Unable to save indicator history: ${historyError.message}`);
-    }
-
-    const { error: syncLogError } = await supabase.from("sync_logs").insert({
-      source: "fred",
-      status: "completed",
-      message: "Macro data synced and scored.",
-      synced_count: scoredIndicators.length,
-      failed_count: 0,
-      error_details: null,
-      started_at: now,
-      completed_at: new Date().toISOString(),
-    });
-
-    if (syncLogError) {
-      throw new Error(`Unable to save sync log: ${syncLogError.message}`);
     }
 
     const { data: draftSnapshot, error: snapshotError } = await supabase
@@ -188,10 +272,37 @@ export async function runMacroSync({ adminUserId }: SyncRunnerOptions) {
       throw new Error(`Unable to complete sync run: ${syncCompleteError.message}`);
     }
 
+    const { error: syncLogError } = await supabase.from("sync_logs").insert({
+      source: "fred",
+      status: syncStatus,
+      message:
+        syncStatus === "partial_success"
+          ? "Macro data sync completed with failed indicators."
+          : "Macro data synced and scored.",
+      synced_count: scoredIndicators.length,
+      failed_count: failedIndicatorsForLog.length,
+      error_details:
+        failedIndicatorsForLog.length > 0
+          ? {
+              failedIndicators: failedIndicatorsForLog,
+            }
+          : null,
+      started_at: startedAt,
+      completed_at: new Date().toISOString(),
+    });
+
+    if (syncLogError) {
+      throw new Error(`Unable to save sync log: ${syncLogError.message}`);
+    }
+
     return {
       syncRunId,
       draftSnapshotId: draftSnapshot.id as string,
       recordsSynced: scoredIndicators.length,
+      failedCount: failedIndicatorsForLog.length,
+      status: syncStatus,
+      sourceStatus,
+      failedIndicators: failedIndicatorsForLog,
       cycleResult,
       groupScores,
     };
@@ -212,9 +323,12 @@ export async function runMacroSync({ adminUserId }: SyncRunnerOptions) {
       status: "failed",
       message,
       synced_count: 0,
-      failed_count: 1,
-      error_details: { message },
-      started_at: new Date().toISOString(),
+      failed_count: failedIndicatorsForLog.length || 1,
+      error_details: {
+        message,
+        failedIndicators: failedIndicatorsForLog,
+      },
+      started_at: startedAt,
       completed_at: new Date().toISOString(),
     });
 

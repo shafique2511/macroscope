@@ -9,6 +9,9 @@ export type NormalizedObservation = {
   date: string;
   rawValue: number;
   normalizedValue: number;
+  previousDate: string | null;
+  previousRawValue: number | null;
+  previousNormalizedValue: number | null;
   unit: string;
 };
 
@@ -24,6 +27,7 @@ function parseFredValue(value: string) {
 function calculateTransformedValue(
   seriesData: FredSeriesResponse,
   latestValue: number,
+  observationIndex = 0,
 ): { normalizedValue: number; unit: string } {
   const transform = seriesData.series.transform;
 
@@ -35,7 +39,7 @@ function calculateTransformedValue(
   }
 
   if (transform === "year_over_year") {
-    const latestDate = new Date(seriesData.observations[0]?.date ?? "");
+    const latestDate = new Date(seriesData.observations[observationIndex]?.date ?? "");
     const priorYearObservation = seriesData.observations.find((observation) => {
       const observationDate = new Date(observation.date);
       return (
@@ -63,9 +67,11 @@ function calculateTransformedValue(
 
 export function normalizeFredData(seriesResponses: FredSeriesResponse[]) {
   return seriesResponses.flatMap((seriesData) => {
-    const latestObservation = seriesData.observations.find(
+    const validObservations = seriesData.observations.filter(
       (observation) => parseFredValue(observation.value) !== null,
     );
+    const latestObservation = validObservations[0];
+    const previousObservation = validObservations[1];
 
     if (!latestObservation) {
       return [];
@@ -78,6 +84,19 @@ export function normalizeFredData(seriesResponses: FredSeriesResponse[]) {
     }
 
     const transformed = calculateTransformedValue(seriesData, latestValue);
+    const previousRawValue = previousObservation
+      ? parseFredValue(previousObservation.value)
+      : null;
+    const previousTransformed =
+      previousRawValue === null
+        ? null
+        : calculateTransformedValue(
+            seriesData,
+            previousRawValue,
+            seriesData.observations.findIndex(
+              (observation) => observation.date === previousObservation?.date,
+            ),
+          );
 
     return [
       {
@@ -88,6 +107,9 @@ export function normalizeFredData(seriesResponses: FredSeriesResponse[]) {
         date: latestObservation.date,
         rawValue: latestValue,
         normalizedValue: transformed.normalizedValue,
+        previousDate: previousObservation?.date ?? null,
+        previousRawValue,
+        previousNormalizedValue: previousTransformed?.normalizedValue ?? null,
         unit: transformed.unit,
       },
     ];

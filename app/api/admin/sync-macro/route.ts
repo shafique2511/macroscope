@@ -44,6 +44,13 @@ export async function POST() {
     return NextResponse.json({
       ok: true,
       result,
+      summary: {
+        status: result.status,
+        sourceStatus: result.sourceStatus,
+        syncedCount: result.recordsSynced,
+        failedCount: result.failedCount,
+        draftSnapshotId: result.draftSnapshotId,
+      },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to sync macro data.";

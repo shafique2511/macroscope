@@ -30,6 +30,31 @@ export async function getLatestPublishedSnapshot(): Promise<PublishedSnapshot | 
   }
 
   const supabase = await createClient();
+  const { data: economicSnapshot } = await supabase
+    .from("economic_cycle_snapshots")
+    .select(
+      "created_at,current_phase,tone,confidence_score,phase_description,what_would_change_regime",
+    )
+    .eq("is_published", true)
+    .order("published_at", { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (economicSnapshot) {
+    return {
+      date: new Date(economicSnapshot.created_at).toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }),
+      cyclePhase: economicSnapshot.current_phase,
+      marketRegime: `${economicSnapshot.tone} regime`,
+      confidenceScore: economicSnapshot.confidence_score,
+      expectation: economicSnapshot.phase_description,
+      riskWatch: economicSnapshot.what_would_change_regime,
+    };
+  }
+
   const { data } = await supabase
     .from("cycle_snapshots")
     .select(

@@ -1,41 +1,8 @@
-"use client";
-
-import { useRouter } from "next/navigation";
-import { FormEvent } from "react";
-
-function getMockRole(email: string) {
-  const normalizedEmail = email.trim().toLowerCase();
-
-  if (
-    normalizedEmail === "admin@macroscope.local" ||
-    normalizedEmail.endsWith("@admin.macroscope.local")
-  ) {
-    return "admin";
-  }
-
-  return "member";
-}
+import { signInAdmin } from "@/app/auth/actions";
 
 export function AdminLoginForm() {
-  const router = useRouter();
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const formData = new FormData(event.currentTarget);
-    const email = String(formData.get("email") ?? "");
-    const role = getMockRole(email);
-
-    if (role === "admin") {
-      router.push("/admin");
-      return;
-    }
-
-    router.push("/login?message=Admin%20access%20only.");
-  }
-
   return (
-    <form className="space-y-4" onSubmit={handleSubmit}>
+    <form action={signInAdmin} className="space-y-4">
       <label className="block">
         <span className="text-sm font-medium text-gray-700">Email</span>
         <input

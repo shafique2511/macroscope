@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@next/eslint-plugin-next": "latest",
+    "@supabase/ssr": "^0.10.3",
+    "@supabase/supabase-js": "^2.106.1",
     "clsx": "latest",
     "lucide-react": "latest",
     "next": "latest",

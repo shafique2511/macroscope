@@ -1,18 +1,8 @@
-"use client";
-
-import { useRouter } from "next/navigation";
-import { FormEvent } from "react";
+import { signInMember } from "@/app/auth/actions";
 
 export function MemberLoginForm() {
-  const router = useRouter();
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    router.push("/dashboard");
-  }
-
   return (
-    <form className="space-y-4" onSubmit={handleSubmit}>
+    <form action={signInMember} className="space-y-4">
       <label className="block">
         <span className="text-sm font-medium text-gray-700">Email</span>
         <input

@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 type SyncState = "idle" | "syncing" | "success" | "error";
 
 export function SyncMacroButton() {
+  const router = useRouter();
   const [state, setState] = useState<SyncState>("idle");
   const [message, setMessage] = useState<string | null>(null);
 
@@ -19,6 +21,8 @@ export function SyncMacroButton() {
       error?: string;
       result?: {
         recordsSynced: number;
+        failedCount: number;
+        status: string;
         cycleResult: {
           cyclePhase: string;
         };
@@ -33,10 +37,13 @@ export function SyncMacroButton() {
 
     setState("success");
     setMessage(
-      `Synced ${payload.result?.recordsSynced ?? 0} indicators. Draft phase: ${
+      `${payload.result?.status ?? "completed"}: synced ${
+        payload.result?.recordsSynced ?? 0
+      } indicators with ${payload.result?.failedCount ?? 0} errors. Draft phase: ${
         payload.result?.cycleResult.cyclePhase ?? "Pending review"
       }.`,
     );
+    router.refresh();
   }
 
   return (

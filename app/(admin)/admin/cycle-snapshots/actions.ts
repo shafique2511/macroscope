@@ -108,7 +108,7 @@ export async function publishCycleSnapshot(formData: FormData) {
     redirectWithMessage("Missing snapshot id.");
   }
 
-  const { supabase } = await requireAdmin();
+  const { supabase, userId } = await requireAdmin();
   const { error: archiveError } = await supabase
     .from("economic_cycle_snapshots")
     .update({ is_published: false })
@@ -123,6 +123,7 @@ export async function publishCycleSnapshot(formData: FormData) {
     .update({
       is_published: true,
       published_at: new Date().toISOString(),
+      published_by: userId,
     })
     .eq("id", snapshotId);
 

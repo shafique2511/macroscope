@@ -26,8 +26,12 @@ export type MemberMacroIndicator = {
   indicator: string;
   group: string;
   latestValue: string;
+  rawLatestValue: number | null;
+  rawPreviousValue: number | null;
   direction: string;
+  autoScore: number | null;
   finalScore: number | null;
+  overrideReason: string | null;
 };
 
 export type MemberDataWatchItem = {
@@ -63,6 +67,7 @@ export type MemberDashboardData = {
   macroIndicators: MemberMacroIndicator[];
   dataWatchItems: MemberDataWatchItem[];
   weeklyNote: MemberWeeklyNote;
+  modePreference: "pro" | "beginner";
 };
 
 function formatDate(value: string | null | undefined) {
@@ -160,8 +165,12 @@ function mockDashboardData(): MemberDashboardData {
       indicator: group.name,
       group: group.name,
       latestValue: String(group.score),
+      rawLatestValue: group.score,
+      rawPreviousValue: null,
       direction: group.bias,
+      autoScore: Math.round((group.score - 50) / 25),
       finalScore: Math.round((group.score - 50) / 25),
+      overrideReason: null,
     })),
     dataWatchItems: [
       {
@@ -198,6 +207,7 @@ function mockDashboardData(): MemberDashboardData {
       summary: "Mock note for local development until Supabase is configured.",
       publishedAt: latestSnapshot.date,
     },
+    modePreference: "pro",
   };
 }
 
@@ -232,6 +242,16 @@ export async function getMemberDashboardData(): Promise<MemberDashboardData> {
   }
 
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: profile } = user
+    ? await supabase
+        .from("profiles")
+        .select("mode_preference")
+        .eq("id", user.id)
+        .maybeSingle()
+    : { data: null };
   const { data: snapshot } = await supabase
     .from("economic_cycle_snapshots")
     .select(
@@ -245,7 +265,7 @@ export async function getMemberDashboardData(): Promise<MemberDashboardData> {
   const { data: indicators } = await supabase
     .from("macro_indicators")
     .select(
-      "indicator_name,group_name,latest_value,value_unit,direction,final_score",
+      "indicator_name,group_name,latest_value,previous_value,value_unit,direction,auto_score,final_score,override_reason",
     )
     .eq("is_active", true)
     .order("group_key", { ascending: true });
@@ -290,8 +310,14 @@ export async function getMemberDashboardData(): Promise<MemberDashboardData> {
         indicator: indicator.indicator_name ?? "Unknown indicator",
         group: indicator.group_name ?? "Unassigned",
         latestValue: formatNumber(indicator.latest_value, indicator.value_unit),
+        rawLatestValue:
+          indicator.latest_value === null ? null : Number(indicator.latest_value),
+        rawPreviousValue:
+          indicator.previous_value === null ? null : Number(indicator.previous_value),
         direction: indicator.direction ?? "neutral",
+        autoScore: indicator.auto_score,
         finalScore: indicator.final_score,
+        overrideReason: indicator.override_reason,
       })) ?? [],
     dataWatchItems:
       dataWatchItems?.map((item) => ({
@@ -308,5 +334,7 @@ export async function getMemberDashboardData(): Promise<MemberDashboardData> {
           publishedAt: formatDate(weeklyNote.published_at),
         }
       : null,
+    modePreference:
+      profile?.mode_preference === "beginner" ? "beginner" : "pro",
   };
 }

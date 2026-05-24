@@ -34,6 +34,7 @@ export async function runMacroSync({ adminUserId }: SyncRunnerOptions) {
     const scoredIndicators = scoreIndicators(normalizedObservations);
     const groupScores = scoreGroups(scoredIndicators);
     const cycleResult = calculateCycleRegime(groupScores);
+    const now = new Date().toISOString();
 
     const { error: observationsError } = await supabase
       .from("macro_indicator_observations")
@@ -58,6 +59,98 @@ export async function runMacroSync({ adminUserId }: SyncRunnerOptions) {
 
     if (observationsError) {
       throw new Error(`Unable to save observations: ${observationsError.message}`);
+    }
+
+    const indicatorKeys = scoredIndicators.map((indicator) => indicator.externalId);
+    const { data: existingIndicators, error: existingIndicatorsError } = await supabase
+      .from("macro_indicators")
+      .select("indicator_key,latest_value,latest_date")
+      .in("indicator_key", indicatorKeys);
+
+    if (existingIndicatorsError) {
+      throw new Error(
+        `Unable to read existing macro indicators: ${existingIndicatorsError.message}`,
+      );
+    }
+
+    const existingIndicatorMap = new Map(
+      (existingIndicators ?? []).map((indicator) => [
+        indicator.indicator_key as string,
+        {
+          latestValue: indicator.latest_value as number | null,
+          latestDate: indicator.latest_date as string | null,
+        },
+      ]),
+    );
+
+    const { error: macroIndicatorsError } = await supabase
+      .from("macro_indicators")
+      .upsert(
+        scoredIndicators.map((indicator) => {
+          const existingIndicator = existingIndicatorMap.get(indicator.externalId);
+
+          return {
+            group_key: indicator.group,
+            group_name: indicator.group
+              .split("_")
+              .map((word) => word[0].toUpperCase() + word.slice(1))
+              .join(" "),
+            indicator_key: indicator.externalId,
+            indicator_name: indicator.label,
+            api_source: indicator.source,
+            api_series_id: indicator.externalId,
+            latest_value: indicator.normalizedValue,
+            previous_value: existingIndicator?.latestValue ?? null,
+            value_unit: indicator.unit,
+            latest_date: indicator.date,
+            previous_date: existingIndicator?.latestDate ?? null,
+            direction: indicator.direction,
+            auto_score: indicator.score,
+            auto_score_reason: `Auto score from ${indicator.label} latest ${indicator.unit} reading.`,
+            source_status: "api",
+            frequency: "scheduled",
+            description: indicator.label,
+            is_active: true,
+            updated_by: adminUserId,
+          };
+        }),
+        {
+          onConflict: "indicator_key",
+        },
+      );
+
+    if (macroIndicatorsError) {
+      throw new Error(`Unable to save macro indicators: ${macroIndicatorsError.message}`);
+    }
+
+    const { error: historyError } = await supabase
+      .from("macro_indicator_history")
+      .insert(
+        scoredIndicators.map((indicator) => ({
+          indicator_key: indicator.externalId,
+          value: indicator.normalizedValue,
+          value_date: indicator.date,
+          source: indicator.source,
+        })),
+      );
+
+    if (historyError) {
+      throw new Error(`Unable to save indicator history: ${historyError.message}`);
+    }
+
+    const { error: syncLogError } = await supabase.from("sync_logs").insert({
+      source: "fred",
+      status: "completed",
+      message: "Macro data synced and scored.",
+      synced_count: scoredIndicators.length,
+      failed_count: 0,
+      error_details: null,
+      started_at: now,
+      completed_at: new Date().toISOString(),
+    });
+
+    if (syncLogError) {
+      throw new Error(`Unable to save sync log: ${syncLogError.message}`);
     }
 
     const { data: draftSnapshot, error: snapshotError } = await supabase
@@ -113,6 +206,17 @@ export async function runMacroSync({ adminUserId }: SyncRunnerOptions) {
         error_message: message,
       })
       .eq("id", syncRunId);
+
+    await supabase.from("sync_logs").insert({
+      source: "fred",
+      status: "failed",
+      message,
+      synced_count: 0,
+      failed_count: 1,
+      error_details: { message },
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+    });
 
     throw error;
   }

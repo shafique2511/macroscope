@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { fetchFredSeries, type FredSeriesResponse } from "@/lib/api/fred";
 import { fetchOptionalMarketData } from "@/lib/api/market-data";
 import { fredSeriesMap, type FredSeriesConfig } from "@/lib/api/series-map";
-import { calculateCycleRegime } from "@/lib/cycle-engine";
+import { detectEconomicCycle, type MacroIndicatorCycleInput } from "@/lib/cycle-engine";
 import { normalizeFredData } from "@/lib/data/normalize";
 import { scoreGroups, scoreIndicators } from "@/lib/data/scoring";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -124,7 +124,6 @@ export async function runMacroSync({ adminUserId }: SyncRunnerOptions) {
 
     const scoredIndicators = scoreIndicators(normalizedObservations);
     const groupScores = scoreGroups(scoredIndicators);
-    const cycleResult = calculateCycleRegime(groupScores);
     const syncStatus =
       failedIndicatorsForLog.length > 0 && scoredIndicators.length > 0
         ? "partial_success"
@@ -222,6 +221,36 @@ export async function runMacroSync({ adminUserId }: SyncRunnerOptions) {
       throw new Error(`Unable to save macro indicators: ${macroIndicatorsError.message}`);
     }
 
+    const { data: cycleIndicators, error: cycleIndicatorsError } = await supabase
+      .from("macro_indicators")
+      .select(
+        "indicator_key,indicator_name,group_key,final_score,auto_score,override_score,override_reason,direction",
+      )
+      .eq("is_active", true);
+
+    if (cycleIndicatorsError) {
+      throw new Error(
+        `Unable to read final macro indicator scores: ${cycleIndicatorsError.message}`,
+      );
+    }
+
+    const cycleResult = detectEconomicCycle(
+      (cycleIndicators ?? []).map(
+        (indicator) =>
+          ({
+            indicator_key: indicator.indicator_key,
+            indicator_name: indicator.indicator_name ?? indicator.indicator_key,
+            group_key: indicator.group_key,
+            final_score: indicator.final_score,
+            auto_score: indicator.auto_score,
+            override_score: indicator.override_score,
+            override_reason: indicator.override_reason,
+            direction: indicator.direction,
+          }) satisfies MacroIndicatorCycleInput,
+      ),
+      "pro",
+    );
+
     const { error: historyError } = await supabase
       .from("macro_indicator_history")
       .insert(
@@ -247,8 +276,8 @@ export async function runMacroSync({ adminUserId }: SyncRunnerOptions) {
         confidence_score: cycleResult.confidenceScore,
         expectation: cycleResult.expectation,
         risk_watch: cycleResult.riskWatch,
-        group_scores: groupScores,
-        indicator_scores: scoredIndicators,
+        group_scores: cycleResult.factorBreakdown,
+        indicator_scores: cycleIndicators ?? scoredIndicators,
         created_by: adminUserId,
       })
       .select("id")

@@ -1,4 +1,8 @@
 import type { GroupScore } from "@/lib/data/scoring";
+import {
+  buildMarketExpectations,
+  type AssetExpectation,
+} from "@/lib/market-expectation-engine";
 
 export type CyclePhase =
   | "Early Expansion"
@@ -54,6 +58,7 @@ export type CycleDetectionResult = {
     beginner: string;
     pro?: string;
   };
+  assetExpectations: AssetExpectation[];
   cyclePhase: CyclePhase;
   marketRegime: string;
   expectation: string;
@@ -371,6 +376,7 @@ export function detectEconomicCycle(
   const detectedRule = `${currentPhase}: ${phaseDescription}`;
   const beginnerExpectation = `${tone} macro regime. ${phaseDescription}`;
   const proExpectation = `${beginnerExpectation} Factor scores: growth ${factorBreakdown.growthScore}, inflation ${factorBreakdown.inflationScore}, policy ${factorBreakdown.policyScore}, liquidity ${factorBreakdown.liquidityScore}, credit ${factorBreakdown.creditScore}, risk appetite ${factorBreakdown.riskAppetiteScore}.`;
+  const assetExpectations = buildMarketExpectations(currentPhase, confidenceScore);
 
   return {
     currentPhase,
@@ -393,6 +399,7 @@ export function detectEconomicCycle(
             beginner: beginnerExpectation,
             pro: proExpectation,
           },
+    assetExpectations,
     cyclePhase: currentPhase,
     marketRegime: `${tone} regime`,
     expectation: mode === "beginner" ? beginnerExpectation : proExpectation,

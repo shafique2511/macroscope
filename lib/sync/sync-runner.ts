@@ -278,6 +278,7 @@ export async function runMacroSync({ adminUserId }: SyncRunnerOptions) {
         risk_watch: cycleResult.riskWatch,
         group_scores: cycleResult.factorBreakdown,
         indicator_scores: cycleIndicators ?? scoredIndicators,
+        market_expectations: cycleResult.assetExpectations,
         created_by: adminUserId,
       })
       .select("id")
